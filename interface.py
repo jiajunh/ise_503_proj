@@ -1,4 +1,6 @@
 import mysql.connector
+import streamlit as st
+# import streamlit.components.v1 as components
 
 
 def get_queries(file_path):
@@ -29,6 +31,44 @@ def initialize(init_file):
     connector.close()
 
 
-if __name__ == '__main__':
+def connect_database(database="travel_agency"):
+    connector = mysql.connector.connect(
+      host="localhost",
+      user="root",
+      password="",
+      database=database,
+    )
+    cursor = connector.cursor()
+    print(f"{'-'*10} Connect to database: {database} {'-'*10}")
+    return connector, cursor
+
+
+def close_connection(connector, cursor):
+    cursor.close()
+    connector.close()
+    print(f"{'-'*10} Close connections {'-'*10}")
+
+
+def set_up():
+    # Initialize database, Create tables
     initialize("init.sql")
-    pass
+
+
+def run_streamlit():
+    st.set_page_config(page_title="ISE 503 Project", layout="centered")
+    st.title('ISE 503 Project')
+
+
+def main():
+    # Connect to the database
+    connector, cursor = connect_database("travel_agency")
+
+    run_streamlit()
+
+    # Close connections
+    close_connection(connector, cursor)
+
+
+if __name__ == '__main__':
+    set_up()
+    main()
