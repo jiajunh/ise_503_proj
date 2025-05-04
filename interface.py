@@ -59,18 +59,79 @@ def set_up():
     # Initialize database, Create tables
     initialize("init.sql")
 
+    # Insert data
+    connect_database()
+    insert_sql = get_queries("insert_data.sql")
+    for stmt in insert_sql:
+        stmt = stmt.strip()
+        if stmt.strip():
+            try:
+                st.session_state.cursor.execute(stmt)
+            except mysql.connector.Error as err:
+                print(f"Insert data Error: {err}\nStatement: {stmt}")
+    st.session_state.db_connector.commit()
+    print(f"{'-'*10} Insert data Completed {'-'*10}")
+    close_connection()
+
+    st.session_state.locations = {
+        "Boston": "LOC0001",
+        "Providence": "LOC0002",
+        "New York": "LOC0003",
+        "Philadelphia": "LOC0004",
+        "Baltimore": "LOC0005",
+        "Washington": "LOC0006",
+        "Richmond": "LOC0007",
+        "Charlotte": "LOC0008",
+        "Jacksonville": "LOC0009",
+        "Miami": "LOC0010",
+    }
+    st.session_state.seat_query_list = ["TRANS0301", "TRANS0401"]
+    st.session_state.user_list = ["USR00001", "USR00002", "USR00003",
+                                  "USR00004", "USR00005"]
+
 
 @st.fragment
 def run_query1():
     print(f"{'-'*10} run_query1 {'-'*10}")
+    
     query_container1 = st.container()
     # query_container1.header("Query 1")
     st.markdown("<h3 style='font-family:Arial; font-size:26px;'>Query1",
                 unsafe_allow_html=True)
     st.markdown("<p style='font-family:Arial; font-size:18px;'>"
                 "Description: Show all the possible combanations of selected "
-                "transpotations from source location to target location "
-                "within the time interval</p>", unsafe_allow_html=True)
+                "public transpotations from source location to target "
+                "location within the time interval</p>",
+                unsafe_allow_html=True)
+
+    input_col, output_col = st.columns([2, 3])
+    with query_container1:
+        with input_col:
+            with st.form("query1"):
+                src_location = st.selectbox(
+                    "Departure Location",
+                    options=["location 1", "location 2", "location 3"],
+                )
+                dest_location = st.selectbox(
+                    "Arrival Location",
+                    options=["location 1", "location 2", "location 3"],
+                )
+                col1, col2 = st.columns(2)
+                with col1:
+                    use_plane = st.checkbox("Plane")
+                with col2:
+                    use_train = st.checkbox("Train")
+                
+                col3, col4 = st.columns(2)
+                with col3:
+                    use_bus = st.checkbox("Bus")
+                with col4:
+                    use_ship = st.checkbox("Ship")
+                q1_submitted = st.form_submit_button("query")
+
+                if q1_submitted:
+                    print(use_plane, use_train, use_bus, use_ship)
+    
 
 
 @st.fragment
@@ -82,7 +143,7 @@ def run_query2():
                 unsafe_allow_html=True)
     st.markdown("<p style='font-family:Arial; font-size:18px;'>"
                 "Description: Show all the travel history records for a "
-                "given passenger</p>", unsafe_allow_html=True)
+                "given passenger account</p>", unsafe_allow_html=True)
 
 
 @st.fragment
@@ -106,7 +167,7 @@ def run_query4():
                 unsafe_allow_html=True)
     st.markdown("<p style='font-family:Arial; font-size:18px;'>"
                 "Description: Show the most popular routine in the past "
-                "30 days</p>", unsafe_allow_html=True)
+                "week</p>", unsafe_allow_html=True)
 
 
 @st.fragment
@@ -129,8 +190,8 @@ def run_query6():
     st.markdown("<h3 style='font-family:Arial; font-size:26px;'>Query6",
                 unsafe_allow_html=True)
     st.markdown("<p style='font-family:Arial; font-size:18px;'>"
-                "Description: Show the least frequent delayed vehicles for "
-                "all public transpotations</p>", unsafe_allow_html=True)
+                "Description: Show the least frequent delayed public "
+                "transpotation</p>", unsafe_allow_html=True)
 
 
 @st.fragment
@@ -141,7 +202,7 @@ def run_query7():
     st.markdown("<h3 style='font-family:Arial; font-size:26px;'>Query7",
                 unsafe_allow_html=True)
     st.markdown("<p style='font-family:Arial; font-size:18px;'>"
-                "Description: Show the remaining seats for a routine</p>",
+                "Description: Show the remaining seats for a route</p>",
                 unsafe_allow_html=True)
 
 
@@ -153,9 +214,9 @@ def run_query8():
     st.markdown("<h3 style='font-family:Arial; font-size:26px;'>Query8",
                 unsafe_allow_html=True)
     st.markdown("<p style='font-family:Arial; font-size:18px;'>"
-                "Description: Show the hotels, the average price is the "
-                "closest to the average hotel costs in the past year "
-                "for a given passenger</p>",
+                "Description: Show the hotels, whose average price is the "
+                "closest to the average accomodation costs "
+                "for a given passenger account</p>",
                 unsafe_allow_html=True)
 
 
@@ -167,8 +228,8 @@ def run_query9():
     st.markdown("<h3 style='font-family:Arial; font-size:26px;'>Query9",
                 unsafe_allow_html=True)
     st.markdown("<p style='font-family:Arial; font-size:18px;'>"
-                "Description: Show the total cost of an user account in the "
-                "past year</p>",
+                "Description: Show the total cost of an user account"
+                " in history</p>",
                 unsafe_allow_html=True)
 
 
@@ -182,7 +243,7 @@ def run_query10():
     st.markdown("<p style='font-family:Arial; font-size:18px;'>"
                 "Show the highest average ratings of the locations, based on "
                 "the review ratings corresponding to the transportations "
-                "start from or end in the location, and the ratings of the "
+                "start from or end with the location, and the ratings of the "
                 "resturants, activities, accommodation in the city</p>",
                 unsafe_allow_html=True)
 
@@ -207,7 +268,7 @@ def main():
     # Connect to the database
     connect_database()
 
-    run_streamlit()
+    # run_streamlit()
 
 
 if __name__ == '__main__':
