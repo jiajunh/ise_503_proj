@@ -105,7 +105,6 @@ CREATE TABLE travel_unit (
     UnitNumber VARCHAR(100) NOT NULL,
     TYPE ENUM('Seat', 'Cabin'),
     Class ENUM('Economy', 'Business', 'First'),
-    IsAvailable BOOLEAN NOT NULL DEFAULT TRUE,
     PRIMARY KEY (TransportationID, UnitNumber),
     FOREIGN KEY (TransportationID) REFERENCES transportation(TransportationID)
 );
@@ -156,6 +155,7 @@ CREATE TABLE route_unit (
     RouteID VARCHAR(100) NOT NULL,
     TransportationID VARCHAR(100) NOT NULL,
     UnitNumber VARCHAR(100) NOT NULL,
+    IsAvailable BOOLEAN NOT NULL DEFAULT TRUE,
     PRIMARY KEY (RouteID, TransportationID, UnitNumber),
     FOREIGN KEY (RouteID) REFERENCES route(RouteID),
     FOREIGN KEY (TransportationID, UnitNumber)
@@ -210,6 +210,7 @@ CREATE TABLE bnb (
     MaxOccupancy INT UNSIGNED NOT NULL,
     Bathrooms INT UNSIGNED NOT NULL,
     Bedrooms INT UNSIGNED NOT NULL,
+    BasePrice DECIMAL(10, 2) UNSIGNED NOT NULL CHECK (BasePrice >= 0),
     FOREIGN KEY (AccommodationID) REFERENCES accommodation(AccommodationID) ON DELETE CASCADE
 );
 
