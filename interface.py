@@ -1,4 +1,5 @@
 import atexit
+import datetime
 import mysql.connector
 import streamlit as st
 # import streamlit.components.v1 as components
@@ -91,6 +92,7 @@ def set_up():
     st.session_state.seat_query_list = ["ROUTETRAIN001", "ROUTEPLANE001"]
     st.session_state.user_list = ["USR00001", "USR00002", "USR00003",
                                   "USR00004", "USR00005"]
+    st.session_state.cancel_transaction_list = ["TXN00200", "TXN00201"]
 
 
 def run_sql(query):
@@ -110,11 +112,6 @@ def run_sql(query):
     finally:
         if cursor:
             cursor.close()  # Always close the cursor
-    # st.session_state.cursor.execute(query)
-    # result = st.session_state.cursor.fetchall()
-    # print(type(result), len(result), result)
-    # st.session_state.db_connector.commit()
-    # return result
 
 
 @st.fragment
@@ -128,7 +125,7 @@ def run_query1():
     st.markdown("<p style='font-family:Arial; font-size:18px;'>"
                 "Description: Show all the possible combanations of selected "
                 "public transpotations from source location to target "
-                "location within the time interval</p>",
+                "location with given StartDate sand EndDate</p>",
                 unsafe_allow_html=True)
 
     input_col, output_col = st.columns([1, 2])
@@ -137,12 +134,27 @@ def run_query1():
             with st.form("query1"):
                 src_location = st.selectbox(
                     "Departure Location",
-                    options=["location 1", "location 2", "location 3"],
+                    options=st.session_state["locations"].keys()
                 )
                 dest_location = st.selectbox(
                     "Arrival Location",
-                    options=["location 1", "location 2", "location 3"],
+                    options=st.session_state["locations"].keys()
                 )
+                max_depth = st.selectbox(
+                    "Maximun depths",
+                    options=[1, 2, 3],
+                )
+
+                start_date = st.date_input("SatrtDate", 
+                                           datetime.date(2025, 4, 27), 
+                                           min_value=datetime.date(2025, 4, 27),
+                                           max_value=datetime.date(2025, 5, 3))
+                
+                end_date = st.date_input("EndDate",
+                                           datetime.date(2025, 4, 27),
+                                           min_value=datetime.date(2025, 4, 27),
+                                           max_value=datetime.date(2025, 5, 4))
+
                 col1, col2 = st.columns(2)
                 with col1:
                     use_plane = st.checkbox("Plane")
@@ -158,8 +170,61 @@ def run_query1():
                 q1_submitted = st.form_submit_button("query")
 
                 if q1_submitted:
-                    print(use_plane, use_train, use_bus, use_ship)
-                    st.session_state["query1_result"] = 1
+                    q1 = f"""
+                    WITH RECURSIVE
+                    start_routes AS (               
+                        SELECT
+                            r.RouteID,
+                            r.TransportationID,
+                            r.SourceLocationID,
+                            r.DestinationLocationID,
+                            r.ScheduledDeparture,
+                            r.ScheduledArrival,
+                            CONCAT(r.RouteID)          AS path_str,
+                            1                          AS leg_no
+                        FROM route r
+                        JOIN public_transport p
+                            ON p.TransportationID = r.TransportationID
+                        WHERE r.SourceLocationID   = '{st.session_state["locations"][src_location]}'
+                        AND r.ScheduledDeparture >= {start_date}
+                        AND r.ScheduledArrival   <= {end_date}
+                    ),
+                    paths AS (                      
+                        SELECT * FROM start_routes
+                        UNION ALL
+                        SELECT
+                            nxt.RouteID,
+                            nxt.TransportationID,
+                            p.SourceLocationID,           
+                            nxt.DestinationLocationID,
+                            p.ScheduledDeparture,         
+                            nxt.ScheduledArrival,         
+                            CONCAT(p.path_str,' → ',nxt.RouteID),
+                            p.leg_no + 1
+                        FROM paths p
+                        JOIN route nxt
+                            ON  nxt.SourceLocationID  = p.DestinationLocationID
+                            AND nxt.ScheduledDeparture >= p.ScheduledArrival          
+                            AND nxt.ScheduledArrival   <= {end_date}
+                        JOIN public_transport pp ON pp.TransportationID = nxt.TransportationID
+                        WHERE p.leg_no < {max_depth}
+                        AND LOCATE(nxt.RouteID, p.path_str) = 0                      
+                    )
+                    SELECT
+                        path_str              AS RoutePath,          
+                        SourceLocationID      AS StartLoc,
+                        DestinationLocationID AS EndLoc,
+                        ScheduledDeparture    AS FirstDepart,
+                        ScheduledArrival      AS LastArrive,
+                        leg_no                AS Segments
+                    FROM paths
+                    WHERE DestinationLocationID = '{st.session_state["locations"][dest_location]}'
+                    ORDER BY Segments, FirstDepart;
+                    """
+                    result = run_sql(q1)
+                    print(src_location, st.session_state["locations"][src_location])
+                    print(dest_location, st.session_state["locations"][src_location])
+                    st.session_state["query1_result"] = result
 
     query_container1_sql = st.container()
     with query_container1_sql:
@@ -167,9 +232,8 @@ def run_query1():
             if "query1_result" not in st.session_state:
                 st.write("Please first make a query")
             else:
-                st.write("testtesttesttesttesttesttesttesttest"
-                         "testtesttesttesttesttesttesttesttesttest"
-                         "testtesttesttesttesttesttest")
+                for item in st.session_state["query1_result"]:
+                    st.write(item)
 
 
 @st.fragment
@@ -196,11 +260,14 @@ def run_query2():
 
                 if q2_submitted:
                     q2 = f"""
-                    SELECT Tr.*
+                    SELECT
+                        Tr.TripID AS TripID,
+                        Tr.TotalCost AS Cost,
+                        Tr.StartDate AS StartDate,
+                        Tr.EndDate AS EndDate
                     FROM `transaction` T
                     JOIN trip Tr ON T.TargetID = Tr.TripID
                     WHERE T.UserID = '{account}' AND T.TargetType = 'Trip'
-                    ORDER BY Tr.StartDate DESC
                     LIMIT {st.session_state["limit_number"]};
                     """
                     result = run_sql(q2)
@@ -210,7 +277,7 @@ def run_query2():
             if "query2_result" not in st.session_state:
                 st.write("No result")
             else:
-                for item in result:
+                for item in st.session_state["query2_result"]:
                     st.write(item)
 
     query_container2_sql = st.container()
@@ -233,6 +300,61 @@ def run_query3():
                 "Description: Cancel a pending or completed transaction, "
                 "given the TranactionID</p>", unsafe_allow_html=True)
 
+    input_col, output_col = st.columns([1, 2])
+    with query_container3:
+        with input_col:
+            with st.form("query3"):
+                transaction_id = st.selectbox(
+                    "Test TranactionID",
+                    options=st.session_state.cancel_transaction_list,
+                )
+
+                q3_submitted = st.form_submit_button("query")
+
+                if q3_submitted:
+                    q3_select = f"""
+                    SELECT 
+                        TransactionID,
+                        UserID,
+                        TotalAmount,
+                        Currency,
+                        PaymentMethod,
+                        STATUS,
+                        UpdatedAt
+                    FROM `transaction`
+                    WHERE TransactionID = '{transaction_id}';
+                    """
+                    result_before = run_sql(q3_select)
+                    q3 = f"""
+                    UPDATE `transaction`
+                    SET STATUS = 'Cancelled',
+                        UpdatedAt = NOW()
+                    WHERE TransactionID = '{transaction_id}'
+                    AND STATUS IN ('Pending','Completed');
+                    """
+                    _ = run_sql(q3)
+                    result_after = run_sql(q3_select)
+                    st.session_state["query3_before_result"] = result_before
+                    st.session_state["query3_after_result"] = result_after
+
+        with output_col:
+            if "query3_after_result" not in st.session_state:
+                st.write("No result")
+            else:
+                st.write("Before cancelling:")
+                for item in st.session_state["query3_before_result"]:
+                    st.write(item)
+                st.write("After cancelling:")
+                for item in st.session_state["query3_after_result"]:
+                    st.write(item)
+
+    query_container3_sql = st.container()
+    with query_container3_sql:
+        with st.expander("Show SQL"):
+            if "query3_after_result" not in st.session_state: 
+                st.write("Please first make a query")
+            else:
+                st.code(q3, language='sql')
 
 @st.fragment
 def run_query4():
@@ -242,8 +364,49 @@ def run_query4():
     st.markdown("<h3 style='font-family:Arial; font-size:26px;'>Query4",
                 unsafe_allow_html=True)
     st.markdown("<p style='font-family:Arial; font-size:18px;'>"
-                "Description: Show the most popular routine in the past "
-                "week</p>", unsafe_allow_html=True)
+                "Description: Show the most popular route in the past "
+                "30 days</p>", unsafe_allow_html=True)
+    
+    input_col, output_col = st.columns([1, 2])
+    with query_container4:
+        with input_col:
+            with st.form("query4"):
+                q4_submitted = st.form_submit_button("query")
+
+                if q4_submitted:
+                    q4 = f"""
+                    SELECT 
+                        R.RouteID,
+                        COUNT(*) AS UsageCount
+                    FROM transaction T
+                    JOIN trip TR ON T.TargetID = TR.TripID
+                    JOIN trip_route TRT ON TR.TripID = TRT.TripID
+                    JOIN route R ON TRT.RouteID = R.RouteID
+                    WHERE T.TargetType = 'Trip'
+                        AND T.STATUS = 'Completed'
+                        AND T.CreatedAt >= NOW() - INTERVAL 30 DAY
+                    GROUP BY R.RouteID
+                    ORDER BY UsageCount DESC
+                    LIMIT {st.session_state["limit_number"]};
+                    """
+                    result = run_sql(q4)
+                    st.session_state["query4_result"] = result
+
+        with output_col:
+            if "query4_result" not in st.session_state:
+                st.write("No result")
+            else:
+                for item in st.session_state["query4_result"]:
+                    st.write(item)
+
+    query_container4_sql = st.container()
+    with query_container4_sql:
+        with st.expander("Show SQL"):
+            if "query4_result" not in st.session_state:
+                st.write("Please first make a query")
+            else:
+                st.code(q4, language='sql')
+
 
 
 @st.fragment
@@ -255,8 +418,41 @@ def run_query5():
                 unsafe_allow_html=True)
     st.markdown("<p style='font-family:Arial; font-size:18px;'>"
                 "Description: Show the safest transpotation type "
-                "(Least accidents)</p>", unsafe_allow_html=True)
+                "(order by accidents asc)</p>", unsafe_allow_html=True)
 
+    input_col, output_col = st.columns([1, 2])
+    with query_container5:
+        with input_col:
+            with st.form("query5"):
+                q5_submitted = st.form_submit_button("query")
+
+                if q5_submitted:
+                    q5 = f"""
+                    SELECT 
+                        T.TYPE AS TransportationType,
+                        COUNT(A.AccidentID) AS AccidentCount
+                    FROM transportation T
+                    LEFT JOIN accident A ON T.TransportationID = A.TransportationID
+                    GROUP BY T.TYPE
+                    ORDER BY AccidentCount ASC;
+                    """
+                    result = run_sql(q5)
+                    st.session_state["query5_result"] = result
+
+        with output_col:
+            if "query5_result" not in st.session_state:
+                st.write("No result")
+            else:
+                for item in st.session_state["query5_result"]:
+                    st.write(item)
+
+    query_container5_sql = st.container()
+    with query_container5_sql:
+        with st.expander("Show SQL"):
+            if "query5_result" not in st.session_state:
+                st.write("Please first make a query")
+            else:
+                st.code(q5, language='sql')
 
 @st.fragment
 def run_query6():
@@ -268,6 +464,42 @@ def run_query6():
     st.markdown("<p style='font-family:Arial; font-size:18px;'>"
                 "Description: Show the least frequent delayed public "
                 "transpotation</p>", unsafe_allow_html=True)
+
+    input_col, output_col = st.columns([1, 2])
+    with query_container6:
+        with input_col:
+            with st.form("query6"):
+                q6_submitted = st.form_submit_button("query")
+
+                if q6_submitted:
+                    q6 = f"""
+                    SELECT 
+                        T.TYPE AS TransportationType,
+                        COUNT(CASE WHEN R.STATUS = 'Delayed' THEN 1 END) * 1.0 / COUNT(*) AS DelayRatio
+                    FROM route R
+                    JOIN transportation T 
+                    ON R.TransportationID = T.TransportationID
+                    GROUP BY T.TYPE
+                    ORDER BY DelayRatio ASC;
+                    """
+                    result = run_sql(q6)
+                    st.session_state["query6_result"] = result
+
+        with output_col:
+            if "query6_result" not in st.session_state:
+                st.write("No result")
+            else:
+                for item in st.session_state["query6_result"]:
+                    st.write(item)
+
+    query_container6_sql = st.container()
+    with query_container6_sql:
+        with st.expander("Show SQL"):
+            if "query6_result" not in st.session_state: 
+                st.write("Please first make a query")
+            else:
+                st.code(q6, language='sql')
+
 
 
 @st.fragment
@@ -314,7 +546,7 @@ def run_query7():
             if "query7_result" not in st.session_state:
                 st.write("No result")
             else:
-                for item in result:
+                for item in st.session_state["query7_result"]:
                     st.write(item)
 
     query_container7_sql = st.container()
@@ -389,7 +621,7 @@ def run_query8():
             if "query8_result" not in st.session_state:
                 st.write("No result")
             else:
-                for item in result:
+                for item in st.session_state["query8_result"]:
                     st.write(item)
 
     query_container8_sql = st.container()
@@ -440,7 +672,7 @@ def run_query9():
             if "query9_result" not in st.session_state:
                 st.write("No result")
             else:
-                for item in result:
+                for item in st.session_state["query9_result"]:
                     st.write(item)
 
     query_container9_sql = st.container()
@@ -543,7 +775,7 @@ def run_query10():
             if "query10_result" not in st.session_state:
                 st.write("No result")
             else:
-                for item in result:
+                for item in st.session_state["query10_result"]:
                     st.write(item)
 
     query_container10_sql = st.container()

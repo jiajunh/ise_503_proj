@@ -1,34 +1,124 @@
+-- Query1
+-- Show all the possible combanations of selected public transpotations from source location to target location with given StartDate sand EndDateSET @MAX_RECURSE_DEPTH := 4;   
+WITH RECURSIVE
+start_routes AS (               
+    SELECT
+        r.RouteID,
+        r.TransportationID,
+        r.SourceLocationID,
+        r.DestinationLocationID,
+        r.ScheduledDeparture,
+        r.ScheduledArrival,
+        CONCAT(r.RouteID)          AS path_str,
+        1                          AS leg_no
+    FROM route r
+    JOIN public_transport p
+          ON p.TransportationID = r.TransportationID
+    WHERE r.SourceLocationID   = @source_id
+      AND r.ScheduledDeparture >= @start_time
+      AND r.ScheduledArrival   <= @end_time
+),
+paths AS (                      
+    SELECT * FROM start_routes
+    UNION ALL
+    SELECT
+        nxt.RouteID,
+        nxt.TransportationID,
+        p.SourceLocationID,           
+        nxt.DestinationLocationID,
+        p.ScheduledDeparture,         
+        nxt.ScheduledArrival,         
+        CONCAT(p.path_str,' → ',nxt.RouteID),
+        p.leg_no + 1
+    FROM paths p
+    JOIN route nxt
+         ON  nxt.SourceLocationID  = p.DestinationLocationID
+         AND nxt.ScheduledDeparture >= p.ScheduledArrival          
+         AND nxt.ScheduledArrival   <= @end_time
+    JOIN public_transport pp ON pp.TransportationID = nxt.TransportationID
+    WHERE p.leg_no < @MAX_RECURSE_DEPTH
+      AND LOCATE(nxt.RouteID, p.path_str) = 0                      
+)
+SELECT
+    path_str              AS RoutePath,          
+    SourceLocationID      AS StartLoc,
+    DestinationLocationID AS EndLoc,
+    ScheduledDeparture    AS FirstDepart,
+    ScheduledArrival      AS LastArrive,
+    leg_no                AS Segments
+FROM paths
+WHERE DestinationLocationID = @target_id
+ORDER BY Segments, FirstDepart;
+
 -- Query 2
 -- Description: Show all the travel history records for a given passenger account
 SELECT 
     Tr.TripID AS TripID, 
     Tr.TotalCost AS Cost,
     Tr.StartDate AS StartDate,
-    Tr.EndTime AS EndTime
+    Tr.EndDate AS EndTime
 FROM `transaction` T 
-JOIN trip Tr ON t.TargetID = tr.TripID
+JOIN trip Tr ON T.TargetID = Tr.TripID
 WHERE T.UserID = @user_account AND T.TargetType = 'Trip'
 ORDER BY Tr.StartDate DESC;
 
+-- Query3
+-- Description: Cancel a pending or completed transaction, given the TranactionID
+UPDATE `transaction`
+SET    STATUS    = 'Cancelled',
+       UpdatedAt = NOW()
+WHERE  TransactionID = @tx_id
+  AND  STATUS IN ('Pending','Completed');
+
+-- Query3 check sql
+SELECT 
+    TransactionID,
+    UserID,
+    TotalAmount,
+    Currency,
+    PaymentMethod,
+    STATUS,
+    UpdatedAt
+FROM `transaction`
+WHERE TransactionID = '{transaction_id}';
+
+-- Query 4 
+-- Description: Show the most popular route in the past 30 days
+SELECT 
+    R.RouteID,
+    COUNT(*) AS UsageCount
+FROM transaction T
+JOIN trip TR ON T.TargetID = TR.TripID
+JOIN trip_route TRT ON TR.TripID = TRT.TripID
+JOIN route R ON TRT.RouteID = R.RouteID
+WHERE T.TargetType = 'Trip'
+    AND T.STATUS = 'Completed'
+    AND T.CreatedAt >= NOW() - INTERVAL 30 DAY
+GROUP BY R.RouteID
+ORDER BY UsageCount DESC
+LIMIT @limit_number;
+
+
+-- Query 5
+-- Description: Show the safest transpotation type (order by accidents asc)
+SELECT 
+    T.TYPE AS TransportationType,
+    COUNT(A.AccidentID) AS AccidentCount
+FROM transportation T
+LEFT JOIN accident A ON T.TransportationID = A.TransportationID
+GROUP BY T.TYPE
+ORDER BY AccidentCount ASC;
+
 -- Query 6
 -- Description: Show the least frequent delayed vehicles for all public transpotations
-WITH delayed_cnt AS (
-    SELECT
-        r.TransportationID,
-        COUNT(*) AS delay_cnt
-    FROM route AS r
-    WHERE r.STATUS = 'Delayed'
-    GROUP BY r.TransportationID
-),
-min_cnt AS (
-    SELECT MIN(delay_cnt) AS val FROM delayed_cnt
-)
-SELECT
-    d.TransportationID,
-    d.delay_cnt
-FROM delayed_cnt AS d
-JOIN min_cnt AS m  ON d.delay_cnt = m.val
-ORDER BY d.TransportationID;
+SELECT 
+    T.TYPE AS TransportationType,
+    COUNT(CASE WHEN R.STATUS = 'Delayed' THEN 1 END) * 1.0 / COUNT(*) AS DelayRatio
+FROM route R
+JOIN transportation T 
+ON R.TransportationID = T.TransportationID
+GROUP BY T.TYPE
+ORDER BY DelayRatio ASC;
 
 -- Query 7
 -- Description: Show the remaining seats for a route
@@ -91,7 +181,6 @@ LIMIT @limit_number;
 -- Query 10
 -- Show the highest average ratings of the locations, based on the review ratings corresponding to the transportations start from or end in the location, and the ratings of the resturants, activities, accommodation in the city
 WITH trans_review AS (
-
     SELECT r.SourceLocationID   AS LocationID,
            rv.Rating
     FROM route        AS r
@@ -113,10 +202,33 @@ WITH trans_review AS (
     WHERE r.DestinationLocationID IS NOT NULL
 ),
 
-trans_avg  AS (SELECT LocationID, AVG(Rating) AS avg_trans_rating  FROM trans_review GROUP BY LocationID),
-rest_avg   AS (SELECT LocationID, AVG(Rating) AS avg_rest_rating   FROM restaurant   GROUP BY LocationID),
-act_avg    AS (SELECT LocationID, AVG(Rating) AS avg_act_rating    FROM activity     GROUP BY LocationID),
-accom_avg  AS (SELECT LocationID, AVG(Rating) AS avg_accom_rating  FROM accommodation GROUP BY LocationID),
+trans_avg AS 
+(SELECT 
+    LocationID, 
+    AVG(Rating) AS avg_trans_rating  
+FROM trans_review 
+GROUP BY LocationID),
+
+rest_avg AS 
+(SELECT 
+    LocationID, 
+    AVG(Rating) AS avg_rest_rating
+FROM restaurant
+GROUP BY LocationID),
+
+act_avg AS
+(SELECT 
+    LocationID, 
+    AVG(Rating) AS avg_act_rating
+FROM activity
+GROUP BY LocationID),
+
+accom_avg AS 
+(SELECT 
+    LocationID, 
+    AVG(Rating) AS avg_accom_rating
+FROM accommodation 
+GROUP BY LocationID),
 
 combined AS (
     SELECT
@@ -124,7 +236,6 @@ combined AS (
         l.City,
         l.StateProvince,
         l.Country,
-
         AVG(val) AS overall_rating
     FROM location AS l
     LEFT JOIN trans_avg  ta ON ta.LocationID  = l.LocationID

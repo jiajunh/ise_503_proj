@@ -1,4 +1,4 @@
-# ams_580_project
+# ISE_503_project
 
 ## Environment
 
@@ -22,7 +22,7 @@
   pip install -r requirements.txt
   ```
 
-* To run the final job, stay at the project directory and run Streamlit. And enjoy the interface :)
+* To run the final job, stay at the project directory and run Streamlit. And enjoy the interface : )
 
   ```
   streamlit run interface.py
