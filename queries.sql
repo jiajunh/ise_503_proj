@@ -1,8 +1,13 @@
 -- Query 2
 -- Description: Show all the travel history records for a given passenger account
-SELECT *
-FROM `transaction` T JOIN trip Tr ON t.TargetID = tr.TripID
-WHERE T.UserID = @account AND T.TargetType = 'Trip'
+SELECT 
+    Tr.TripID AS TripID, 
+    Tr.TotalCost AS Cost,
+    Tr.StartDate AS StartDate,
+    Tr.EndTime AS EndTime
+FROM `transaction` T 
+JOIN trip Tr ON t.TargetID = tr.TripID
+WHERE T.UserID = @user_account AND T.TargetType = 'Trip'
 ORDER BY Tr.StartDate DESC;
 
 -- Query 6
@@ -74,22 +79,76 @@ ORDER BY price_diff
 LIMIT @limit_number;
 
 -- Query 9
--- Description: Show the total cost of an user account in history
-WITH user_trans AS (
-    SELECT t.TotalAmount
-    FROM review         AS r
-    JOIN `transaction`  AS t ON t.TransactionID = r.TransactionID
-    WHERE r.UserID      = @user_id
-      AND t.STATUS      = 'Completed'
-      AND t.CreatedAt  >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
-)
-SELECT
-    @user_id                          AS UserID,
-    IFNULL(SUM(TotalAmount), 0)       AS total_spent
-FROM user_trans;
-
+-- Description: Show the total cost of an user account in last one year
+SELECT T.UserID, SUM(T.TotalAmount)
+FROM `transaction` AS T
+WHERE T.UserID = @user_account
+    AND T.STATUS = 'Completed'
+    AND t.CreatedAt >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
+GROUP BY T.UserID
+LIMIT @limit_number;
 
 -- Query 10
 -- Show the highest average ratings of the locations, based on the review ratings corresponding to the transportations start from or end in the location, and the ratings of the resturants, activities, accommodation in the city
+WITH trans_review AS (
+
+    SELECT r.SourceLocationID   AS LocationID,
+           rv.Rating
+    FROM route        AS r
+    JOIN trip_route   AS tr ON tr.RouteID      = r.RouteID
+    JOIN `transaction`AS t  ON t.TargetType    = 'Trip'
+                            AND t.TargetID     = tr.TripID
+    JOIN review       AS rv ON rv.TransactionID = t.TransactionID
+    WHERE r.SourceLocationID IS NOT NULL
+
+    UNION ALL
+
+    SELECT r.DestinationLocationID,
+           rv.Rating
+    FROM route        AS r
+    JOIN trip_route   AS tr ON tr.RouteID      = r.RouteID
+    JOIN `transaction`AS t  ON t.TargetType    = 'Trip'
+                            AND t.TargetID     = tr.TripID
+    JOIN review       AS rv ON rv.TransactionID = t.TransactionID
+    WHERE r.DestinationLocationID IS NOT NULL
+),
+
+trans_avg  AS (SELECT LocationID, AVG(Rating) AS avg_trans_rating  FROM trans_review GROUP BY LocationID),
+rest_avg   AS (SELECT LocationID, AVG(Rating) AS avg_rest_rating   FROM restaurant   GROUP BY LocationID),
+act_avg    AS (SELECT LocationID, AVG(Rating) AS avg_act_rating    FROM activity     GROUP BY LocationID),
+accom_avg  AS (SELECT LocationID, AVG(Rating) AS avg_accom_rating  FROM accommodation GROUP BY LocationID),
+
+combined AS (
+    SELECT
+        l.LocationID,
+        l.City,
+        l.StateProvince,
+        l.Country,
+
+        AVG(val) AS overall_rating
+    FROM location AS l
+    LEFT JOIN trans_avg  ta ON ta.LocationID  = l.LocationID
+    LEFT JOIN rest_avg   ra ON ra.LocationID  = l.LocationID
+    LEFT JOIN act_avg    aa ON aa.LocationID  = l.LocationID
+    LEFT JOIN accom_avg  ca ON ca.LocationID  = l.LocationID
+
+    CROSS JOIN LATERAL (
+        SELECT ta.avg_trans_rating  AS val UNION ALL
+        SELECT ra.avg_rest_rating   UNION ALL
+        SELECT aa.avg_act_rating    UNION ALL
+        SELECT ca.avg_accom_rating
+    ) AS x
+    WHERE x.val IS NOT NULL            
+    GROUP BY l.LocationID
+)
+SELECT
+    LocationID,
+    City,
+    StateProvince,
+    Country,
+    ROUND(overall_rating, 2) AS overall_rating
+FROM combined
+ORDER BY overall_rating DESC
+LIMIT @limit_number;                               
 
 
