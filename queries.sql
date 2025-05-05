@@ -1,54 +1,50 @@
 -- Query1
 -- Show all the possible combanations of selected public transpotations from source location to target location with given StartDate sand EndDateSET @MAX_RECURSE_DEPTH := 4;   
-WITH RECURSIVE
-start_routes AS (               
-    SELECT
-        r.RouteID,
-        r.TransportationID,
-        r.SourceLocationID,
-        r.DestinationLocationID,
-        r.ScheduledDeparture,
-        r.ScheduledArrival,
-        CONCAT(r.RouteID)          AS path_str,
-        1                          AS leg_no
-    FROM route r
-    JOIN public_transport p
-          ON p.TransportationID = r.TransportationID
-    WHERE r.SourceLocationID   = @source_id
-      AND r.ScheduledDeparture >= @start_time
-      AND r.ScheduledArrival   <= @end_time
-),
-paths AS (                      
-    SELECT * FROM start_routes
-    UNION ALL
-    SELECT
-        nxt.RouteID,
-        nxt.TransportationID,
-        p.SourceLocationID,           
-        nxt.DestinationLocationID,
-        p.ScheduledDeparture,         
-        nxt.ScheduledArrival,         
-        CONCAT(p.path_str,' → ',nxt.RouteID),
-        p.leg_no + 1
-    FROM paths p
-    JOIN route nxt
-         ON  nxt.SourceLocationID  = p.DestinationLocationID
-         AND nxt.ScheduledDeparture >= p.ScheduledArrival          
-         AND nxt.ScheduledArrival   <= @end_time
-    JOIN public_transport pp ON pp.TransportationID = nxt.TransportationID
-    WHERE p.leg_no < @MAX_RECURSE_DEPTH
-      AND LOCATE(nxt.RouteID, p.path_str) = 0                      
-)
+WITH RECURSIVE route_chain AS (
+-- Base case: Direct routes from the source
 SELECT
-    path_str              AS RoutePath,          
-    SourceLocationID      AS StartLoc,
-    DestinationLocationID AS EndLoc,
-    ScheduledDeparture    AS FirstDepart,
-    ScheduledArrival      AS LastArrive,
-    leg_no                AS Segments
-FROM paths
-WHERE DestinationLocationID = @target_id
-ORDER BY Segments, FirstDepart;
+    r.ScheduledDeparture,
+    r.ScheduledArrival,
+    r.DestinationLocationID,
+    CAST(r.ScheduledDeparture AS CHAR(1000)) AS schedule_departure_path,
+    CAST(r.ScheduledArrival AS CHAR(1000)) AS scheduled_arrival_path,
+    CAST(r.SourceLocationID AS CHAR(1000)) AS source_location_path,
+    CAST(r.DestinationLocationID AS CHAR(1000)) AS dest_location_path,
+    CAST(r.TransportationID AS CHAR(1000)) AS transpotation_path,
+    0 AS depth,
+    CAST(r.RouteID AS CHAR(1000)) AS route_path
+FROM route r
+JOIN transportation t ON r.TransportationID = t.TransportationID
+WHERE r.SourceLocationID = '{st.session_state["locations"][src_location]}'
+AND r.ScheduledDeparture >= '{start_datetime}'
+AND r.ScheduledArrival <= '{end_datetime}'
+AND t.TYPE IN ({transport_str})
+UNION ALL
+SELECT
+    r.ScheduledDeparture,
+    r.ScheduledArrival,
+    r.DestinationLocationID,
+    CONCAT(rc.schedule_departure_path, '->', r.ScheduledDeparture),
+    CONCAT(rc.scheduled_arrival_path, '->', r.ScheduledArrival),
+    CONCAT(rc.source_location_path,'->',r.SourceLocationID),
+    CONCAT(rc.dest_location_path,'->',r.DestinationLocationID),
+    CONCAT(rc.transpotation_path, '->', r.TransportationID),
+    rc.depth + 1,
+    CONCAT(rc.route_path, '->', r.RouteID)
+FROM route r
+JOIN transportation t ON r.TransportationID = t.TransportationID
+JOIN route_chain rc ON r.SourceLocationID = rc.DestinationLocationID
+WHERE r.ScheduledDeparture >= rc.ScheduledArrival
+AND r.ScheduledArrival <= '{end_datetime}'
+AND rc.depth < {num_transfers}
+AND t.TYPE IN ({transport_str})
+)
+SELECT *
+FROM route_chain
+WHERE DestinationLocationID = '{st.session_state["locations"][dest_location]}'
+ORDER BY depth, ScheduledDeparture ASC
+LIMIT {st.session_state["limit_number"]};
+
 
 -- Query 2
 -- Description: Show all the travel history records for a given passenger account

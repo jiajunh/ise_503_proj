@@ -140,20 +140,22 @@ def run_query1():
                     "Arrival Location",
                     options=st.session_state["locations"].keys()
                 )
-                max_depth = st.selectbox(
-                    "Maximun depths",
-                    options=[1, 2, 3],
+                num_transfers = st.selectbox(
+                    "Num of transfers",
+                    options=[1, 2, 3, 4, 5],
                 )
 
                 start_date = st.date_input("SatrtDate", 
                                            datetime.date(2025, 4, 27), 
                                            min_value=datetime.date(2025, 4, 27),
                                            max_value=datetime.date(2025, 5, 3))
+                start_datetime = start_date.strftime('%Y-%m-%d 00:00:00')
                 
                 end_date = st.date_input("EndDate",
                                            datetime.date(2025, 4, 27),
                                            min_value=datetime.date(2025, 4, 27),
                                            max_value=datetime.date(2025, 5, 4))
+                end_datetime = end_date.strftime('%Y-%m-%d 23:59:59')
 
                 col1, col2 = st.columns(2)
                 with col1:
@@ -170,61 +172,95 @@ def run_query1():
                 q1_submitted = st.form_submit_button("query")
 
                 if q1_submitted:
+                    transport_types = []
+                    if use_plane:
+                        transport_types.append("Plane")
+                    if use_ship:
+                        transport_types.append("Ship")
+                    if use_train:
+                        transport_types.append("Train")
+                    if use_bus:
+                        transport_types.append("Bus")
+
+                    transport_str = ", ".join([f"'{t}'" for t in transport_types])
+                    print("transport_str", transport_str)
+
                     q1 = f"""
-                    WITH RECURSIVE
-                    start_routes AS (               
-                        SELECT
-                            r.RouteID,
-                            r.TransportationID,
-                            r.SourceLocationID,
-                            r.DestinationLocationID,
-                            r.ScheduledDeparture,
-                            r.ScheduledArrival,
-                            CONCAT(r.RouteID)          AS path_str,
-                            1                          AS leg_no
-                        FROM route r
-                        JOIN public_transport p
-                            ON p.TransportationID = r.TransportationID
-                        WHERE r.SourceLocationID   = '{st.session_state["locations"][src_location]}'
-                        AND r.ScheduledDeparture >= {start_date}
-                        AND r.ScheduledArrival   <= {end_date}
-                    ),
-                    paths AS (                      
-                        SELECT * FROM start_routes
-                        UNION ALL
-                        SELECT
-                            nxt.RouteID,
-                            nxt.TransportationID,
-                            p.SourceLocationID,           
-                            nxt.DestinationLocationID,
-                            p.ScheduledDeparture,         
-                            nxt.ScheduledArrival,         
-                            CONCAT(p.path_str,' → ',nxt.RouteID),
-                            p.leg_no + 1
-                        FROM paths p
-                        JOIN route nxt
-                            ON  nxt.SourceLocationID  = p.DestinationLocationID
-                            AND nxt.ScheduledDeparture >= p.ScheduledArrival          
-                            AND nxt.ScheduledArrival   <= {end_date}
-                        JOIN public_transport pp ON pp.TransportationID = nxt.TransportationID
-                        WHERE p.leg_no < {max_depth}
-                        AND LOCATE(nxt.RouteID, p.path_str) = 0                      
-                    )
+                    WITH RECURSIVE route_chain AS (
+                    -- Base case: Direct routes from the source
                     SELECT
-                        path_str              AS RoutePath,          
-                        SourceLocationID      AS StartLoc,
-                        DestinationLocationID AS EndLoc,
-                        ScheduledDeparture    AS FirstDepart,
-                        ScheduledArrival      AS LastArrive,
-                        leg_no                AS Segments
-                    FROM paths
+                        r.ScheduledDeparture,
+                        r.ScheduledArrival,
+                        r.DestinationLocationID,
+                        CAST(r.ScheduledDeparture AS CHAR(1000)) AS schedule_departure_path,
+                        CAST(r.ScheduledArrival AS CHAR(1000)) AS scheduled_arrival_path,
+                        CAST(r.SourceLocationID AS CHAR(1000)) AS source_location_path,
+                        CAST(r.DestinationLocationID AS CHAR(1000)) AS dest_location_path,
+                        CAST(r.TransportationID AS CHAR(1000)) AS transpotation_path,
+                        0 AS depth,
+                        CAST(r.RouteID AS CHAR(1000)) AS route_path
+                    FROM route r
+                    JOIN transportation t ON r.TransportationID = t.TransportationID
+                    WHERE r.SourceLocationID = '{st.session_state["locations"][src_location]}'
+                    AND r.ScheduledDeparture >= '{start_datetime}'
+                    AND r.ScheduledArrival <= '{end_datetime}'
+                    AND t.TYPE IN ({transport_str})
+
+                    UNION ALL
+
+                    SELECT
+                        r.ScheduledDeparture,
+                        r.ScheduledArrival,
+                        r.DestinationLocationID,
+                        CONCAT(rc.schedule_departure_path, '->', r.ScheduledDeparture),
+                        CONCAT(rc.scheduled_arrival_path, '->', r.ScheduledArrival),
+                        CONCAT(rc.source_location_path,'->',r.SourceLocationID),
+                        CONCAT(rc.dest_location_path,'->',r.DestinationLocationID),
+                        CONCAT(rc.transpotation_path, '->', r.TransportationID),
+                        rc.depth + 1,
+                        CONCAT(rc.route_path, '->', r.RouteID)
+                    FROM route r
+                    JOIN transportation t ON r.TransportationID = t.TransportationID
+                    JOIN route_chain rc ON r.SourceLocationID = rc.DestinationLocationID
+                    WHERE r.ScheduledDeparture >= rc.ScheduledArrival
+                    AND r.ScheduledArrival <= '{end_datetime}'
+                    AND rc.depth < {num_transfers}
+                    AND t.TYPE IN ({transport_str})
+                    )
+
+                    SELECT *
+                    FROM route_chain
                     WHERE DestinationLocationID = '{st.session_state["locations"][dest_location]}'
-                    ORDER BY Segments, FirstDepart;
+                    ORDER BY depth, ScheduledDeparture ASC
+                    LIMIT {st.session_state["limit_number"]};
                     """
                     result = run_sql(q1)
-                    print(src_location, st.session_state["locations"][src_location])
-                    print(dest_location, st.session_state["locations"][src_location])
+                    print("Source Location: ", src_location, 
+                          st.session_state["locations"][src_location])
+                    print("Destination Location: ", dest_location, 
+                          st.session_state["locations"][dest_location])
+                    print("StartDate:", type(start_datetime), start_datetime)
+                    print("EndDate:", type(end_datetime), end_datetime)
+                    print("num_transfers", num_transfers)
+                    print(f"Use plane: {use_plane}, Use ship: {use_ship}, "
+                          f"Use bus: {use_bus}, Use train: {use_train}")
                     st.session_state["query1_result"] = result
+
+        with output_col:
+            if "query1_result" not in st.session_state:
+                st.write("No result")
+            else:
+                for item in st.session_state["query1_result"]:
+                    # route_chain = item[-1]
+                    # num_transfers = item[-2]
+                    # transpotation_chain = item[-3]
+                    # source_location_chain = item[-5]
+                    # dest_location_chain = item[-4]
+                    # schedule_departure_chain = item[-7]
+                    # arrival_departure_chain = item[-6]
+
+                    # print(schedule_departure_chain.split("->"))
+                    st.write(item)
 
     query_container1_sql = st.container()
     with query_container1_sql:
@@ -232,8 +268,7 @@ def run_query1():
             if "query1_result" not in st.session_state:
                 st.write("Please first make a query")
             else:
-                for item in st.session_state["query1_result"]:
-                    st.write(item)
+                st.code(q1, language='sql')
 
 
 @st.fragment
