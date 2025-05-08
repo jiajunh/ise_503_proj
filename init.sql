@@ -202,7 +202,8 @@ CREATE TABLE hotel (
     HasLaundryService BOOLEAN NOT NULL DEFAULT FALSE,
     NumberOfRooms INT UNSIGNED NOT NULL,
     ReceptionAvailable BOOLEAN NOT NULL DEFAULT FALSE,
-    FOREIGN KEY (AccommodationID) REFERENCES accommodation(AccommodationID) ON DELETE CASCADE
+    FOREIGN KEY (AccommodationID) REFERENCES accommodation(AccommodationID) 
+    ON DELETE CASCADE
 );
 
 CREATE TABLE bnb (
@@ -211,7 +212,8 @@ CREATE TABLE bnb (
     Bathrooms INT UNSIGNED NOT NULL,
     Bedrooms INT UNSIGNED NOT NULL,
     BasePrice DECIMAL(10, 2) UNSIGNED NOT NULL CHECK (BasePrice >= 0),
-    FOREIGN KEY (AccommodationID) REFERENCES accommodation(AccommodationID) ON DELETE CASCADE
+    FOREIGN KEY (AccommodationID) REFERENCES accommodation(AccommodationID) 
+    ON DELETE CASCADE
 );
 
 CREATE TABLE room (
@@ -225,7 +227,8 @@ CREATE TABLE room (
     HasPrivateBathroom BOOLEAN NOT NULL DEFAULT FALSE,
     Facility TEXT,
     PRIMARY KEY (AccommodationID, RoomNumber),
-    FOREIGN KEY (AccommodationID) REFERENCES hotel(AccommodationID) ON DELETE CASCADE
+    FOREIGN KEY (AccommodationID) REFERENCES hotel(AccommodationID) 
+    ON DELETE CASCADE
 );
 
 CREATE TABLE acc_booking (
@@ -250,7 +253,8 @@ CREATE TABLE booking_room (
 
 CREATE TABLE user_level (
     LevelName VARCHAR(100) PRIMARY KEY,
-    DiscountRate DECIMAL(3, 2) UNSIGNED CHECK (DiscountRate BETWEEN 0.00 AND 1.00),
+    DiscountRate DECIMAL(3, 2) UNSIGNED CHECK 
+    (DiscountRate BETWEEN 0.00 AND 1.00),
     MinPoints INT UNSIGNED NOT NULL,
     MaxPoints INT UNSIGNED NOT NULL
 );
@@ -338,7 +342,8 @@ CREATE TABLE customer_service_agent (
     LastName VARCHAR(100) NOT NULL,
     Email VARCHAR(255) UNIQUE,
     PhoneNumber VARCHAR(50) UNIQUE,
-    AvailabilityStatus ENUM('Online', 'Busy', 'Offline') NOT NULL DEFAULT 'Offline'
+    AvailabilityStatus ENUM('Online', 'Busy', 'Offline') 
+    NOT NULL DEFAULT 'Offline'
 );
 
 CREATE TABLE message (

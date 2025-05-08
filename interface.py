@@ -764,10 +764,17 @@ def run_query10():
                         WHERE r.DestinationLocationID IS NOT NULL
                     ),
 
-                    trans_avg  AS (SELECT LocationID, AVG(Rating) AS avg_trans_rating  FROM trans_review GROUP BY LocationID),
-                    rest_avg   AS (SELECT LocationID, AVG(Rating) AS avg_rest_rating   FROM restaurant   GROUP BY LocationID),
-                    act_avg    AS (SELECT LocationID, AVG(Rating) AS avg_act_rating    FROM activity     GROUP BY LocationID),
-                    accom_avg  AS (SELECT LocationID, AVG(Rating) AS avg_accom_rating  FROM accommodation GROUP BY LocationID),
+                    trans_avg  AS (SELECT LocationID, AVG(Rating) AS avg_trans_rating  
+                    FROM trans_review GROUP BY LocationID),
+
+                    rest_avg AS (SELECT LocationID, AVG(Rating) AS avg_rest_rating   
+                    FROM restaurant GROUP BY LocationID),
+
+                    act_avg AS (SELECT LocationID, AVG(Rating) AS avg_act_rating    
+                    FROM activity GROUP BY LocationID),
+                    
+                    accom_avg AS (SELECT LocationID, AVG(Rating) AS avg_accom_rating  
+                    FROM accommodation GROUP BY LocationID),
 
                     combined AS (
                         SELECT

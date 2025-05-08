@@ -1,7 +1,6 @@
 -- Query1
--- Show all the possible combanations of selected public transpotations from source location to target location with given StartDate sand EndDateSET @MAX_RECURSE_DEPTH := 4;   
+-- Show all the possible combanations of selected public transpotations from source location to target location with given StartDate sand EndDateSET @MAX_RECURSE_DEPTH := 5;   
 WITH RECURSIVE route_chain AS (
--- Base case: Direct routes from the source
 SELECT
     r.ScheduledDeparture,
     r.ScheduledArrival,
@@ -16,9 +15,9 @@ SELECT
 FROM route r
 JOIN transportation t ON r.TransportationID = t.TransportationID
 WHERE r.SourceLocationID = '{st.session_state["locations"][src_location]}'
-AND r.ScheduledDeparture >= '{start_datetime}'
-AND r.ScheduledArrival <= '{end_datetime}'
-AND t.TYPE IN ({transport_str})
+AND r.ScheduledDeparture >= @start_datetime
+AND r.ScheduledArrival <= @end_datetime
+AND t.TYPE IN (@transport_str)
 UNION ALL
 SELECT
     r.ScheduledDeparture,
@@ -35,10 +34,11 @@ FROM route r
 JOIN transportation t ON r.TransportationID = t.TransportationID
 JOIN route_chain rc ON r.SourceLocationID = rc.DestinationLocationID
 WHERE r.ScheduledDeparture >= rc.ScheduledArrival
-AND r.ScheduledArrival <= '{end_datetime}'
-AND rc.depth < {num_transfers}
-AND t.TYPE IN ({transport_str})
+AND r.ScheduledArrival <= @end_datetime
+AND rc.depth < @num_transfers
+AND t.TYPE IN (@transport_str)
 )
+
 SELECT *
 FROM route_chain
 WHERE DestinationLocationID = '{st.session_state["locations"][dest_location]}'
@@ -96,7 +96,7 @@ LIMIT @limit_number;
 
 
 -- Query 5
--- Description: Show the safest transpotation type (order by accidents asc)
+-- Description: Show the safest transportation type (order by accidents asc)
 SELECT 
     T.TYPE AS TransportationType,
     COUNT(A.AccidentID) AS AccidentCount
